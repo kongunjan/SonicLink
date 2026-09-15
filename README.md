@@ -40,7 +40,7 @@ listening through the microphone using the Goertzel algorithm.
 
 1. Clone the repository:
    ```
-   git clone https://github.com/<your-username>/SonicLink.git
+   git clone https://github.com/kongunjan/SonicLink.git
    cd SonicLink
    ```
 
