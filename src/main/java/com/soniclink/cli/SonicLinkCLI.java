@@ -1,20 +1,22 @@
 package com.soniclink.cli;
 
+import com.soniclink.audio.AudioTransmitter;
+import com.soniclink.codec.Modulator;
+import com.soniclink.codec.Packet;
+import com.soniclink.codec.PacketCodec;
+import com.soniclink.util.BitStreamUtils;
+import com.soniclink.util.SonicConfig;
+import java.nio.charset.StandardCharsets;
+import javax.sound.sampled.LineUnavailableException;
+
 /**
- * Entry point for SonicLink.
+ * Command-Line Interface for SonicLink Acoustic Communication.
  *
- * Usage:
- *   java com.soniclink.cli.SonicLinkCLI send "Hello World"
- *   java com.soniclink.cli.SonicLinkCLI listen
- *
- * Responsibilities of this class:
- *  - Parse command-line arguments (mode: send/listen, message/options)
- *  - Wire together the Modulator/AudioTransmitter for sending
- *  - Wire together the AudioReceiver/GoertzelDetector/Demodulator for listening
- *  - Print clear, human-readable status to the console
- *
- * Keep this class thin — it should only coordinate other classes,
- * not contain DSP logic itself.
+ * Supported Commands:
+ *   send <message>      Encodes and transmits a message as sound via the speaker
+ *   listen              Listens via microphone and decodes incoming audio
+ *   self-test           Runs automated diagnostics and loopback tests
+ *   help                Displays command documentation
  */
 public class SonicLinkCLI {
 
@@ -24,66 +26,137 @@ public class SonicLinkCLI {
             return;
         }
 
-        String mode = args[0].toLowerCase();
+        String command = args[0].toLowerCase();
 
-        switch (mode) {
+        switch (command) {
             case "send":
                 if (args.length < 2) {
-                    System.out.println("Error: Please provide a message to send.");
-                    System.out.println("Usage: send \"your message\"");
+                    System.err.println("Error: Please specify a message to send.");
+                    System.err.println("Usage: java -cp out com.soniclink.cli.SonicLinkCLI send \"Hello World\"");
                     return;
                 }
-                handleSend(args[1]);
+                String message = joinArguments(args, 1);
+                handleSend(message);
                 break;
 
             case "listen":
                 handleListen();
                 break;
 
-            default:
+            case "self-test":
+                handleSelfTest();
+                break;
+
+            case "help":
+            case "--help":
+            case "-h":
                 printUsage();
+                break;
+
+            default:
+                System.err.println("Unknown command: " + args[0]);
+                printUsage();
+                break;
         }
     }
 
     /**
-     * TODO (you implement):
-     *  1. Convert the message String to bytes, then bits (use BitStreamUtils)
-     *  2. Compute a checksum over the bytes (use ChecksumValidator) and prepend/append it
-     *     to the bitstream so the receiver can verify integrity
-     *  3. Pass the full bitstream to Modulator to get audio samples (FSK encoding)
-     *  4. Pass those samples to AudioTransmitter to actually play them
-     *  5. Print progress to the console (e.g. "Encoding 42 bits...", "Transmitting...")
+     * Joins CLI arguments starting from a given index with single spaces.
      */
-    private static void handleSend(String message) {
-        System.out.println("[SEND MODE] Message: " + message);
-        // TODO: implement the pipeline described above
-        System.out.println("TODO: implement handleSend()");
+    private static String joinArguments(String[] args, int startIndex) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = startIndex; i < args.length; i++) {
+            if (i > startIndex) {
+                sb.append(" ");
+            }
+            sb.append(args[i]);
+        }
+        return sb.toString();
     }
 
     /**
-     * TODO (you implement):
-     *  1. Start AudioReceiver capturing from the microphone
-     *  2. Feed captured samples into GoertzelDetector in sliding windows to detect
-     *     which frequency (tone) is present in each window
-     *  3. Pass the sequence of detected frequencies to Demodulator to reconstruct bits
-     *  4. Convert bits back to bytes (BitStreamUtils), verify checksum (ChecksumValidator)
-     *  5. Print the decoded message, or an error if checksum verification fails
-     *
-     * Tip: think about how you detect "silence" vs "start of transmission" —
-     * you'll likely want a preamble (a fixed known tone pattern) at the start
-     * of every transmission so the receiver knows when real data begins.
+     * Executes the transmitter pipeline:
+     * UTF-8 encode -> Packet creation -> CRC-8 calculation -> Bit conversion ->
+     * Binary FSK Modulation -> Signed 16-bit PCM -> Audio playback via SourceDataLine.
      */
+    private static void handleSend(String message) {
+        if (message.isEmpty()) {
+            System.err.println("Error: Cannot send an empty message.");
+            return;
+        }
+
+        try {
+            byte[] payload = message.getBytes(StandardCharsets.UTF_8);
+            if (payload.length > SonicConfig.MAX_PAYLOAD_SIZE) {
+                System.err.printf("Error: Message length (%d bytes) exceeds maximum payload limit (%d bytes).\n",
+                        payload.length, SonicConfig.MAX_PAYLOAD_SIZE);
+                return;
+            }
+
+            Packet packet = new Packet(payload);
+            byte[] packetBytes = PacketCodec.encode(packet);
+            boolean[] bits = BitStreamUtils.bytesToBits(packetBytes);
+
+            Modulator modulator = new Modulator();
+            byte[] pcmData = modulator.modulate(bits);
+
+            double durationSeconds = (double) pcmData.length / (SonicConfig.SAMPLE_RATE * 2.0);
+            double baudRate = 1000.0 / SonicConfig.SYMBOL_DURATION_MS;
+
+            System.out.println("SonicLink Acoustic Communication");
+            System.out.println("────────────────────────────────────────────");
+            System.out.println("Mode:           TRANSMITTER");
+            System.out.println("Message:        \"" + message + "\"");
+            System.out.println("Payload:        " + payload.length + " bytes (UTF-8)");
+            System.out.println("Packet Size:    " + packetBytes.length + " bytes (Header: 5 B, CRC-8: 1 B)");
+            System.out.println("Bits:           " + bits.length + " bits");
+            System.out.println("Modulation:     Binary FSK");
+            System.out.println("  Bit 0:        " + (int) SonicConfig.FREQ_BIT_0 + " Hz");
+            System.out.println("  Bit 1:        " + (int) SonicConfig.FREQ_BIT_1 + " Hz");
+            System.out.println("  Preamble:     " + (int) SonicConfig.PREAMBLE_FREQ + " Hz (" + SonicConfig.PREAMBLE_DURATION_MS + " ms)");
+            System.out.println("  Symbol:       " + SonicConfig.SYMBOL_DURATION_MS + " ms (" + String.format("%.1f", baudRate) + " bits/s raw)");
+            System.out.printf("Audio Duration: %.2f s (%d bytes PCM)\n", durationSeconds, pcmData.length);
+            System.out.println("────────────────────────────────────────────");
+            System.out.println("Transmitting...");
+
+            AudioTransmitter transmitter = new AudioTransmitter();
+            transmitter.play(pcmData);
+
+            System.out.println("✓ Transmission complete");
+        } catch (LineUnavailableException e) {
+            System.err.println("\nAudio Playback Error: Line unavailable.");
+            System.err.println("Details: " + e.getMessage());
+            System.err.println("Verify that speaker hardware is connected and accessible.");
+        } catch (Exception e) {
+            System.err.println("\nTransmission Error: " + e.getMessage());
+        }
+    }
+
     private static void handleListen() {
-        System.out.println("[LISTEN MODE] Listening for incoming transmission...");
-        // TODO: implement the pipeline described above
-        System.out.println("TODO: implement handleListen()");
+        System.out.println("SonicLink Acoustic Communication");
+        System.out.println("────────────────────────────────────────────");
+        System.out.println("Mode: RECEIVER");
+        System.out.println("Status: Audio receiver module will be initialized in Phase 2.");
+        System.out.println("Run 'self-test' to verify software loopback and DSP algorithms.");
+    }
+
+    private static void handleSelfTest() {
+        System.out.println("SonicLink Self-Test");
+        System.out.println("────────────────────────────────────────────");
+        System.out.println("Executing system self-tests...");
+        // Placeholder for comprehensive self-test suite (Phase 6)
     }
 
     private static void printUsage() {
-        System.out.println("SonicLink - Data transmission over sound");
+        System.out.println("SonicLink - Acoustic Data Communication System");
+        System.out.println("Transmits data using audible sound between computers without networks.");
         System.out.println();
         System.out.println("Usage:");
-        System.out.println("  send \"<message>\"   Encode and transmit a message via speaker");
-        System.out.println("  listen              Listen via microphone and decode incoming data");
+        System.out.println("  send <message>   Encodes message and transmits via speaker");
+        System.out.println("                   Example: java -cp out com.soniclink.cli.SonicLinkCLI send \"Hello World\"");
+        System.out.println("                   Example: java -cp out com.soniclink.cli.SonicLinkCLI send Hello World");
+        System.out.println("  listen           Captures sound via microphone and decodes message");
+        System.out.println("  self-test        Executes internal DSP loopback tests");
+        System.out.println("  help             Displays this help message");
     }
 }

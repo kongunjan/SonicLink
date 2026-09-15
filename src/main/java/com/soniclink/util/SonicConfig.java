@@ -1,42 +1,50 @@
 package com.soniclink.util;
 
 /**
- * Central place for all tunable constants, so Modulator, Demodulator,
- * and GoertzelDetector all agree on the same scheme without duplicating
- * magic numbers.
+ * Central configuration class for all acoustic, modulation, protocol,
+ * and audio hardware parameters used across SonicLink.
  *
- * These starting values are reasonable defaults for a laptop
- * speaker/mic setup. You will likely need to TUNE these experimentally —
- * that tuning process is great material for your report's "Testing
- * Approach" and "Challenges Faced" sections (e.g. "at 44100Hz sample rate
- * and 50ms symbols, X% of bits were misread at 1 meter distance; increasing
- * symbol duration to 100ms fixed most errors").
+ * Keeping these constants centralized ensures Modulator, Demodulator,
+ * GoertzelDetector, PacketCodec, and Audio I/O agree on identical schemes
+ * without hardcoding magic numbers across the codebase.
  */
-public class SonicConfig {
+public final class SonicConfig {
 
-    // Audio format
-    public static final float SAMPLE_RATE = 44100f; // samples per second
-    public static final int SAMPLE_SIZE_BITS = 16;
-    public static final int CHANNELS = 1; // mono
-    public static final boolean SIGNED = true;
-    public static final boolean BIG_ENDIAN = false;
+    // Audio format specification (javax.sound.sampled compatible)
+    public static final float SAMPLE_RATE = 44100.0f; // samples per second
+    public static final int SAMPLE_SIZE_BITS = 16;     // 16-bit linear PCM
+    public static final int CHANNELS = 1;              // Mono
+    public static final boolean SIGNED = true;         // Signed integers (-32768 to 32767)
+    public static final boolean BIG_ENDIAN = false;    // Little-endian byte order
 
-    // FSK scheme: two distinct tones represent bit 0 and bit 1
-    public static final double FREQ_BIT_0 = 1200.0; // Hz
-    public static final double FREQ_BIT_1 = 2200.0; // Hz
+    // FSK modulation scheme: two distinct audio tones represent bit 0 and bit 1
+    public static final double FREQ_BIT_0 = 1200.0;    // Hz
+    public static final double FREQ_BIT_1 = 2200.0;    // Hz
 
-    // How long each bit's tone plays for for (symbol duration).
-    // Longer = more reliable over noisy audio, but slower transmission.
+    // Transmission timing
+    // 50 ms per symbol = 20 symbols (bits) per second raw data rate
     public static final int SYMBOL_DURATION_MS = 50;
 
-    // A short fixed tone pattern sent before real data, so the receiver
-    // knows when a transmission is starting (vs. background noise/silence).
-    // TODO: decide on a preamble scheme, e.g. a fixed number of alternating
-    // 0/1 tones, or a unique frequency not used for data.
-    public static final double PREAMBLE_FREQ = 3000.0; // Hz, example
-    public static final int PREAMBLE_DURATION_MS = 200;
+    // Preamble tone: unique frequency and duration preceding every packet
+    // Used by receiver for energy detection, threshold calibration, and symbol synchronization
+    public static final double PREAMBLE_FREQ = 3000.0; // Hz
+    public static final int PREAMBLE_DURATION_MS = 200; // ms
+
+    // Signal shaping
+    public static final double AMPLITUDE = 0.8;        // 80% full-scale to prevent clipping distortion
+    public static final int RAMP_DURATION_MS = 2;      // 2 ms raised-cosine/linear ramp to eliminate clicks
+
+    // Packet protocol framing
+    public static final byte MAGIC_1 = 0x53;           // ASCII 'S'
+    public static final byte MAGIC_2 = 0x4C;           // ASCII 'L' (SonicLink)
+    public static final byte PROTOCOL_VERSION = 0x01;  // Version 1
+    public static final int MAX_PAYLOAD_SIZE = 256;    // Maximum payload bytes per packet
+
+    // Detection thresholds for Goertzel receiver
+    public static final double DETECTION_THRESHOLD_RATIO = 2.0; // Minimum dominant-to-other frequency ratio
+    public static final double MIN_SIGNAL_MAGNITUDE = 500.0;     // Minimum absolute Goertzel magnitude
 
     private SonicConfig() {
-        // prevent instantiation, this is a constants-only class
+        // Prevent instantiation
     }
 }
