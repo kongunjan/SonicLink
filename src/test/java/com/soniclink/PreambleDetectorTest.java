@@ -11,6 +11,11 @@ public class PreambleDetectorTest {
     private static final float SAMPLE_RATE =
             SonicConfig.SAMPLE_RATE;
 
+    // The preamble tone has a short fade-in/fade-out ramp (see Modulator.generateTone),
+    // so the Goertzel-optimal detection window can land a few samples off the nominal
+    // tone boundary. This tolerance absorbs that DSP artifact without masking real bugs.
+    private static final int TOLERANCE_MS = 5;
+
     public static void main(String[] args) {
 
         testDetectPreambleAtBeginning();
@@ -46,9 +51,10 @@ public class PreambleDetectorTest {
                                 / 1000.0f
                 ) * 2;
 
-        assertEquals(
+        assertWithinTolerance(
                 expectedEnd,
                 detectedEnd,
+                toleranceBytes(),
                 "Preamble end detected incorrectly"
         );
     }
@@ -93,14 +99,15 @@ public class PreambleDetectorTest {
         int expectedEnd =
                 silence.length
                         + Math.round(
-                                SAMPLE_RATE
-                                        * SonicConfig.PREAMBLE_DURATION_MS
-                                        / 1000.0f
-                        ) * 2;
+                        SAMPLE_RATE
+                                * SonicConfig.PREAMBLE_DURATION_MS
+                                / 1000.0f
+                ) * 2;
 
-        assertEquals(
+        assertWithinTolerance(
                 expectedEnd,
                 detectedEnd,
+                toleranceBytes(),
                 "Preamble after silence detected incorrectly"
         );
     }
@@ -125,6 +132,34 @@ public class PreambleDetectorTest {
                 rejected,
                 "Detector should reject audio without preamble"
         );
+    }
+
+    /**
+     * Tolerance window, expressed in PCM byte offset (16-bit samples = 2 bytes each),
+     * corresponding to TOLERANCE_MS of audio at the configured sample rate.
+     */
+    private static int toleranceBytes() {
+        return Math.round(SAMPLE_RATE * TOLERANCE_MS / 1000.0f) * 2;
+    }
+
+    private static void assertWithinTolerance(
+            int expected,
+            int actual,
+            int tolerance,
+            String message) {
+
+        if (Math.abs(expected - actual) > tolerance) {
+            throw new AssertionError(
+                    message
+                            + " (expected "
+                            + expected
+                            + " \u00b1 "
+                            + tolerance
+                            + ", got "
+                            + actual
+                            + ")"
+            );
+        }
     }
 
     private static void assertEquals(
