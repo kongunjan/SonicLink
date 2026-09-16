@@ -19,7 +19,7 @@ public final class PreambleDetector {
                 SonicConfig.SAMPLE_RATE,
                 SonicConfig.PREAMBLE_FREQ,
                 SonicConfig.PREAMBLE_DURATION_MS,
-                0.50
+                0.35
         );
     }
 
@@ -51,7 +51,23 @@ public final class PreambleDetector {
         this.threshold = threshold;
     }
 
-   
+    public static int findPreambleEnd(
+            byte[] pcmData,
+            float sampleRate,
+            double preambleFrequency,
+            int preambleDurationMs) {
+
+        PreambleDetector detector =
+                new PreambleDetector(
+                        sampleRate,
+                        preambleFrequency,
+                        preambleDurationMs,
+                    0.35
+                );
+
+        return detector.findPreambleEnd(pcmData);
+    }
+
     public int findPreambleEnd(byte[] pcmData) {
 
         if (pcmData == null || pcmData.length == 0) {

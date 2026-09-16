@@ -1,6 +1,10 @@
 package com.soniclink.cli;
+import com.soniclink.audio.AudioReceiver;
+import com.soniclink.codec.PreambleDetector;
+import java.util.Arrays;
 
 import com.soniclink.audio.AudioTransmitter;
+import com.soniclink.codec.Demodulator;
 import com.soniclink.codec.Modulator;
 import com.soniclink.codec.Packet;
 import com.soniclink.codec.PacketCodec;
@@ -133,12 +137,130 @@ public class SonicLinkCLI {
     }
 
     private static void handleListen() {
-        System.out.println("SonicLink Acoustic Communication");
+    final int RECORD_DURATION_MS = 10000;
+
+    System.out.println("SonicLink Acoustic Communication");
+    System.out.println("────────────────────────────────────────────");
+    System.out.println("Mode:           RECEIVER");
+    System.out.println("Status:         Waiting for acoustic transmission...");
+    System.out.println();
+
+    try {
+        AudioReceiver receiver = new AudioReceiver();
+
+        System.out.println("🎤 Starting microphone...");
+        byte[] pcmData = receiver.record(RECORD_DURATION_MS);
+
+        System.out.println();
+        System.out.println("🔎 Searching for preamble...");
+
+        int preambleEnd =
+                PreambleDetector.findPreambleEnd(
+                        pcmData,
+                        SonicConfig.SAMPLE_RATE,
+                        SonicConfig.PREAMBLE_FREQ,
+                        SonicConfig.PREAMBLE_DURATION_MS
+                );
+
+        if (preambleEnd < 0 || preambleEnd >= pcmData.length) {
+            System.err.println("✗ No valid preamble detected.");
+            return;
+        }
+
+        System.out.println("✓ Preamble detected.");
+        System.out.println("  Data starts at byte: " + preambleEnd);
+
+        System.out.println();
+        System.out.println("📡 Demodulating FSK signal...");
+
+        Demodulator demodulator = new Demodulator();
+        int headerBits = PacketCodec.HEADER_SIZE * 8;
+        int headerBytes = headerBits * demodulator.getSamplesPerSymbol() * 2;
+        if (pcmData.length - preambleEnd < headerBytes) {
+            System.err.println("✗ Recording ended before the packet header was received.");
+            return;
+        }
+
+        byte[] headerPcm =
+            Arrays.copyOfRange(
+                pcmData,
+                preambleEnd,
+                preambleEnd + headerBytes
+            );
+        boolean[] header = demodulator.demodulate(headerPcm);
+        byte[] headerBytesDecoded = BitStreamUtils.bitsToBytes(header);
+
+        if (headerBytesDecoded[0] != SonicConfig.MAGIC_1
+            || headerBytesDecoded[1] != SonicConfig.MAGIC_2
+            || headerBytesDecoded[2] != SonicConfig.PROTOCOL_VERSION) {
+            System.err.println("✗ Invalid packet header received.");
+            return;
+        }
+
+        int payloadLength =
+            ((headerBytesDecoded[3] & 0xFF) << 8)
+                | (headerBytesDecoded[4] & 0xFF);
+        if (payloadLength > SonicConfig.MAX_PAYLOAD_SIZE) {
+            System.err.println("✗ Packet payload length is invalid: " + payloadLength);
+            return;
+        }
+
+        int expectedPacketBytes =
+            PacketCodec.HEADER_SIZE
+                + payloadLength
+                + PacketCodec.CRC_SIZE;
+        int expectedPacketBits = expectedPacketBytes * 8;
+        int packetPcmBytes =
+            expectedPacketBits * demodulator.getSamplesPerSymbol() * 2;
+
+        if (pcmData.length - preambleEnd < packetPcmBytes) {
+            System.err.println("✗ Recording ended before the complete packet was received.");
+            return;
+        }
+
+        byte[] dataPcm =
+            Arrays.copyOfRange(
+                pcmData,
+                preambleEnd,
+                preambleEnd + packetPcmBytes
+            );
+        boolean[] bits = demodulator.demodulate(dataPcm);
+
+        System.out.println("✓ Demodulation complete.");
+        System.out.println("  Bits received: " + bits.length);
+
+        byte[] packetBytes = BitStreamUtils.bitsToBytes(bits);
+
+        System.out.println();
+        System.out.println("📦 Packet received.");
+        System.out.println("  Payload length: " + payloadLength + " bytes");
+
+        Packet packet =
+                PacketCodec.decode(packetBytes);
+
+        System.out.println("✓ CRC-8 verified.");
+        System.out.println();
         System.out.println("────────────────────────────────────────────");
-        System.out.println("Mode: RECEIVER");
-        System.out.println("Status: Audio receiver module will be initialized in Phase 2.");
-        System.out.println("Run 'self-test' to verify software loopback and DSP algorithms.");
+        System.out.println("💬 Message: " + packet.getPayloadAsString());
+        System.out.println("────────────────────────────────────────────");
+        System.out.println("✓ Reception complete.");
+
+    } catch (LineUnavailableException e) {
+        System.err.println();
+        System.err.println("🎤 Microphone Error: " + e.getMessage());
+        System.err.println(
+                "Check microphone permissions and make sure an input device is available."
+        );
+
+    } catch (IllegalArgumentException e) {
+        System.err.println();
+        System.err.println("✗ Receiver Error: " + e.getMessage());
+
+    } catch (Exception e) {
+        System.err.println();
+        System.err.println("✗ Packet Reception Error: " + e.getMessage());
     }
+}
 
     private static void handleSelfTest() {
         System.out.println("SonicLink Self-Test");
