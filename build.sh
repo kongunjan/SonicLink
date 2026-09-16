@@ -35,5 +35,5 @@ echo "=========================================="
 if [ "$1" == "test" ]; then
     echo ""
     echo "Running test suite..."
-    java -cp out com.soniclink.Phase1TestsRunner
+    java -cp out com.soniclink.AllTestsRunner
 fi

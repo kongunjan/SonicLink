@@ -1,23 +1,33 @@
 package com.soniclink;
 
 /**
- * Runner that executes all Phase 1 unit tests and reports aggregated results.
+ * Runner that executes the full SonicLink unit test suite (codec framing,
+ * bit-level utilities, FSK modulation, and the DSP-facing detectors used on
+ * the receive path) and reports aggregated results.
  */
-public class Phase1TestsRunner {
+public class AllTestsRunner {
 
     public static void main(String[] args) {
         System.out.println("==================================================");
-        System.out.println("            SONICLINK PHASE 1 TEST SUITE          ");
+        System.out.println("              SONICLINK TEST SUITE                ");
         System.out.println("==================================================");
 
         try {
+            // Framing / protocol / bit-level utilities
             ChecksumValidatorTest.main(new String[0]);
             BitStreamUtilsTest.main(new String[0]);
             PacketCodecTest.main(new String[0]);
+
+            // Modulation (transmit path)
             ModulatorTest.main(new String[0]);
 
+            // Detection / demodulation (receive path)
+            GoertzelDetectorTest.main(new String[0]);
+            DemodulatorTest.main(new String[0]);
+            PreambleDetectorTest.main(new String[0]);
+
             System.out.println("==================================================");
-            System.out.println("✓ ALL PHASE 1 TESTS PASSED SUCCESSFULLY!");
+            System.out.println("✓ ALL TESTS PASSED SUCCESSFULLY!");
             System.out.println("==================================================");
         } catch (Exception e) {
             System.err.println("❌ Test suite encountered a failure:");
