@@ -52,11 +52,11 @@ public class AudioReceiver {
         try (TargetDataLine microphone =
                      (TargetDataLine) AudioSystem.getLine(info)) {
 
-            microphone.open(format);
-            microphone.start();
-
             int bytesPerSample =
                     SonicConfig.SAMPLE_SIZE_BITS / 8;
+
+                int frameSize =
+                    format.getFrameSize();
 
             int bytesToRecord =
                     (int) (
@@ -67,6 +67,11 @@ public class AudioReceiver {
                                     * bytesPerSample
                     );
 
+                            bytesToRecord -= bytesToRecord % frameSize;
+
+                            microphone.open(format, bytesToRecord);
+                            microphone.start();
+
             byte[] result = new byte[bytesToRecord];
 
             int totalRead = 0;
@@ -76,9 +81,10 @@ public class AudioReceiver {
             while (totalRead < bytesToRecord) {
 
                 int bytesToRead = Math.min(
-                        4096,
-                        bytesToRecord - totalRead
+                    4096,
+                    bytesToRecord - totalRead
                 );
+                bytesToRead -= bytesToRead % frameSize;
 
                 int count = microphone.read(
                         result,
@@ -86,9 +92,11 @@ public class AudioReceiver {
                         bytesToRead
                 );
 
-                if (count > 0) {
-                    totalRead += count;
+                if (count <= 0) {
+                    continue;
                 }
+
+                totalRead += count - (count % frameSize);
             }
 
             microphone.stop();
