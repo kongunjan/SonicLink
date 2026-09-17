@@ -1,8 +1,11 @@
 package com.soniclink.cli;
 
+import com.soniclink.core.FileTransmitter;
 import com.soniclink.core.SonicReceiver;
 import com.soniclink.core.SonicSelfTest;
 import com.soniclink.core.SonicTransmitter;
+
+import java.util.Scanner;
 
 /**
  * Command-line interface for SonicLink.
@@ -17,11 +20,13 @@ public class SonicLinkCLI {
     private final SonicTransmitter transmitter;
     private final SonicReceiver receiver;
     private final SonicSelfTest selfTest;
+    private final FileTransmitter fileTransmitter;
 
     public SonicLinkCLI() {
         this.transmitter = new SonicTransmitter();
         this.receiver = new SonicReceiver();
         this.selfTest = new SonicSelfTest();
+        this.fileTransmitter = new FileTransmitter();
     }
 
     public static void main(String[] args) {
@@ -51,6 +56,11 @@ public class SonicLinkCLI {
 
                 case "send":
                     handleSend(args);
+                    break;
+
+                case "send-file":
+                case "sendfile":
+                    handleSendFile(args);
                     break;
 
                 case "listen":
@@ -146,6 +156,91 @@ public class SonicLinkCLI {
     }
 
     /**
+     * Handles the send-file command.
+     *
+     * Usage:
+     *     send-file [path]
+     *
+     * If no path is given, an interactive menu lets the user choose the
+     * file type (Text / PDF / Image) and enter a path. If a path IS given
+     * on the command line, the file type is auto-detected from its
+     * extension and no prompt is shown.
+     */
+    private void handleSendFile(String[] args)
+            throws Exception {
+
+        String filePath;
+
+        if (args.length >= 2) {
+            // Path given directly on the command line, e.g.
+            // send-file /path/to/document.pdf
+            filePath = args[1];
+
+        } else {
+            // No path given - walk the user through an interactive menu.
+            filePath = promptForFilePath();
+
+            if (filePath == null) {
+                System.out.println("✗ Cancelled.");
+                return;
+            }
+        }
+
+        fileTransmitter.transmitFile(filePath);
+    }
+
+    /**
+     * Interactive menu: lets the user pick a file type for context, then
+     * type the path to the file. The type selection is informational for
+     * the user (auto-detection from the extension still happens inside
+     * FileTransmitter); it mainly helps guide what kind of file is expected.
+     *
+     * @return the entered file path, or null if the user cancelled
+     */
+    private String promptForFilePath() {
+
+        Scanner scanner = new Scanner(System.in);
+
+        System.out.println();
+        System.out.println("What would you like to send?");
+        System.out.println("  1) Text file (.txt)");
+        System.out.println("  2) PDF file (.pdf)");
+        System.out.println("  3) Image file (.png/.jpg/.jpeg/.gif/.bmp/.webp)");
+        System.out.println("  0) Cancel");
+        System.out.print("Choose an option: ");
+
+        String choice = scanner.nextLine().trim();
+
+        String kindLabel;
+        switch (choice) {
+            case "1":
+                kindLabel = "text";
+                break;
+            case "2":
+                kindLabel = "PDF";
+                break;
+            case "3":
+                kindLabel = "image";
+                break;
+            case "0":
+                return null;
+            default:
+                System.err.println("✗ Invalid option.");
+                return null;
+        }
+
+        System.out.printf("Enter the path to the %s file: ", kindLabel);
+        String path = scanner.nextLine().trim();
+
+        if (path.isEmpty()) {
+            System.err.println("✗ No path entered.");
+            return null;
+        }
+
+        return path;
+    }
+
+    /**
      * Handles the listen command.
      */
     private void handleListen()
@@ -187,6 +282,24 @@ public class SonicLinkCLI {
         System.out.println();
 
         System.out.println(
+                "  send-file [path]"
+        );
+
+        System.out.println(
+                "      Transmit a text/PDF/image file through audio."
+        );
+
+        System.out.println(
+                "      Without a path, shows an interactive menu to pick"
+        );
+
+        System.out.println(
+                "      the file type and enter a path."
+        );
+
+        System.out.println();
+
+        System.out.println(
                 "  listen"
         );
 
@@ -220,6 +333,18 @@ public class SonicLinkCLI {
 
         System.out.println(
                 "  ./build.sh run send \"Hello SonicLink\""
+        );
+
+        System.out.println();
+
+        System.out.println(
+                "  ./build.sh run send-file"
+        );
+
+        System.out.println();
+
+        System.out.println(
+                "  ./build.sh run send-file ./report.pdf"
         );
 
         System.out.println();

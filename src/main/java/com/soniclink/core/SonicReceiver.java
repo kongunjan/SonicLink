@@ -53,7 +53,7 @@ public class SonicReceiver {
          *
          * AudioReceiver is responsible only for microphone capture.
          */
-        byte[] pcmData = audioReceiver.record(18000);
+        byte[] pcmData = audioReceiver.record(20000);
 
         if (pcmData == null || pcmData.length == 0) {
             System.err.println("✗ No audio data received.");
