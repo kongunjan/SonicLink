@@ -640,32 +640,6 @@ The complete transmission process is:
 
 ---
 
-# ⚠️ Current Limitations
-
-SonicLink is an experimental acoustic modem, so it has several limitations.
-
-### Fixed capture duration
-
-The receiver currently uses a predefined capture duration instead of continuously detecting when a transmission begins and ends.
-
-### Fixed transmission parameters
-
-The current implementation uses fixed FSK frequencies and symbol timing.
-
-### Noise sensitivity
-
-Strong background noise or acoustic interference can cause incorrect frequency detection.
-
-### Limited data rate
-
-The system prioritizes simplicity and reliability over high-speed communication.
-
-### Error detection only
-
-CRC can identify corrupted packets but does not repair them.
-
----
-
 # 🔮 Future Enhancements
 
 Possible improvements include:
