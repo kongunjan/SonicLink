@@ -1,300 +1,479 @@
 package com.soniclink.cli;
 
-import com.soniclink.core.FileTransmitter;
-import com.soniclink.core.SonicReceiver;
+import com.soniclink.audio.AudioReceiver;
+import com.soniclink.audio.AudioTransmitter;
+import com.soniclink.codec.Demodulator;
+import com.soniclink.codec.Modulator;
+import com.soniclink.codec.Packet;
+import com.soniclink.codec.PacketCodec;
+import com.soniclink.codec.PacketException;
+import com.soniclink.codec.PreambleDetector;
+import com.soniclink.core.FileTextExtractor;
 import com.soniclink.core.SonicSelfTest;
-import com.soniclink.core.SonicTransmitter;
+import com.soniclink.util.BitStreamUtils;
+import com.soniclink.util.SonicConfig;
 
-import java.util.Scanner;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 
-/**
- * Command-line interface for SonicLink.
- *
- * The CLI is responsible only for:
- * - Reading commands
- * - Validating basic command syntax
- * - Delegating work to core services
- */
 public class SonicLinkCLI {
 
-    private final SonicTransmitter transmitter;
-    private final SonicReceiver receiver;
     private final SonicSelfTest selfTest;
-    private final FileTransmitter fileTransmitter;
 
     public SonicLinkCLI() {
-        this.transmitter = new SonicTransmitter();
-        this.receiver = new SonicReceiver();
         this.selfTest = new SonicSelfTest();
-        this.fileTransmitter = new FileTransmitter();
     }
 
     public static void main(String[] args) {
 
-        SonicLinkCLI cli =
-                new SonicLinkCLI();
-
-        cli.run(args);
-    }
-
-    /**
-     * Processes the command-line arguments.
-     */
-    public void run(String[] args) {
+        SonicLinkCLI cli = new SonicLinkCLI();
 
         if (args.length == 0) {
-            printUsage();
+            cli.printUsage();
             return;
         }
 
-        String command =
-                args[0].toLowerCase();
+        String command = args[0].toLowerCase();
+
+        switch (command) {
+
+            case "send":
+
+                if (args.length < 2) {
+                    System.err.println("✗ Please enter a message.");
+                    System.err.println(
+                            "Usage: bash build.sh run send \"Hello SonicLink\""
+                    );
+                    return;
+                }
+
+                cli.handleSend(cli.joinArguments(args, 1));
+                break;
+
+            case "send-file":
+
+                if (args.length < 2) {
+                    System.err.println("✗ Please provide a file path.");
+                    System.err.println(
+                            "Usage: bash build.sh run send-file ./test.txt"
+                    );
+                    return;
+                }
+
+                cli.handleSendFile(args[1]);
+                break;
+
+            case "listen":
+
+                cli.handleListen();
+                break;
+
+            case "self-test":
+
+                cli.selfTest.run();
+                break;
+
+            case "help":
+            case "--help":
+            case "-h":
+
+                cli.printUsage();
+                break;
+
+            default:
+
+                System.err.println("✗ Unknown command: " + command);
+                cli.printUsage();
+        }
+    }
+
+    private String joinArguments(String[] args, int start) {
+
+        StringBuilder result = new StringBuilder();
+
+        for (int i = start; i < args.length; i++) {
+
+            if (i > start) {
+                result.append(" ");
+            }
+
+            result.append(args[i]);
+        }
+
+        return result.toString();
+    }
+
+    private void handleSend(String message) {
+
+        if (message == null || message.trim().isEmpty()) {
+
+            System.err.println("✗ Cannot send empty message.");
+            return;
+        }
+
+        transmitText(message, "TEXT MESSAGE");
+    }
+
+    private void handleSendFile(String filePath) {
 
         try {
 
-            switch (command) {
+            System.out.println();
+            System.out.println("==========================================");
+            System.out.println("       SONICLINK FILE → AUDIO");
+            System.out.println("==========================================");
+            System.out.println("File: " + filePath);
+            System.out.println();
 
-                case "send":
-                    handleSend(args);
-                    break;
+            String text = FileTextExtractor.extract(filePath);
 
-                case "send-file":
-                case "sendfile":
-                    handleSendFile(args);
-                    break;
+            if (text == null || text.trim().isEmpty()) {
 
-                case "listen":
-                case "receive":
-                    handleListen();
-                    break;
-
-                case "self-test":
-                case "selftest":
-                case "test":
-                    handleSelfTest();
-                    break;
-
-                case "help":
-                case "-h":
-                case "--help":
-                    printUsage();
-                    break;
-
-                default:
-                    System.err.println(
-                            "✗ Unknown command: "
-                                    + args[0]
-                    );
-
-                    System.out.println();
-                    printUsage();
+                System.err.println("✗ No readable text found.");
+                return;
             }
+
+            System.out.println("✓ Text extraction successful.");
+            System.out.println("  Characters: " + text.length());
+
+            String preview = text
+                    .replaceAll("\\s+", " ")
+                    .trim();
+
+            if (preview.length() > 120) {
+                preview = preview.substring(0, 120) + "...";
+            }
+
+            System.out.println("  Preview: " + preview);
+            System.out.println();
+
+            transmitText(text, "FILE CONTENT");
+
+        } catch (Exception e) {
+
+            System.err.println(
+                    "✗ File processing error: " + e.getMessage()
+            );
+        }
+    }
+
+    private void transmitText(String text, String mode) {
+
+        try {
+
+            byte[] payload =
+                    text.getBytes(StandardCharsets.UTF_8);
+
+            System.out.println("==========================================");
+            System.out.println("        SONICLINK TRANSMITTER");
+            System.out.println("==========================================");
+            System.out.println("Mode: " + mode);
+            System.out.println("Payload: " + payload.length + " bytes");
+            System.out.println();
+
+            if (payload.length > SonicConfig.MAX_PAYLOAD_SIZE) {
+
+                System.err.println(
+                        "✗ Text is too large for one SonicLink packet."
+                );
+
+                System.err.println(
+                        "  Maximum payload: "
+                                + SonicConfig.MAX_PAYLOAD_SIZE
+                                + " bytes"
+                );
+
+                System.err.println(
+                        "  Use a smaller file for the demo."
+                );
+
+                return;
+            }
+
+            Packet packet = new Packet(payload);
+
+            byte[] packetBytes =
+                    PacketCodec.encode(packet);
+
+            boolean[] bits =
+                    BitStreamUtils.bytesToBits(packetBytes);
+
+            System.out.println(
+                    "✓ Packet created: "
+                            + packetBytes.length
+                            + " bytes"
+            );
+
+            System.out.println(
+                    "✓ Converted to "
+                            + bits.length
+                            + " FSK bits"
+            );
+
+            Modulator modulator =
+                    new Modulator();
+
+            byte[] pcm =
+                    modulator.modulate(bits);
+
+            double duration =
+                    (double) pcm.length
+                            / (SonicConfig.SAMPLE_RATE * 2.0);
+
+            System.out.printf(
+                    "✓ Audio generated: %.2f seconds%n",
+                    duration
+            );
+
+            System.out.println();
+            System.out.println("🔊 Transmitting through speaker...");
+
+            AudioTransmitter transmitter =
+                    new AudioTransmitter();
+
+            transmitter.play(pcm);
+
+            System.out.println();
+            System.out.println("==========================================");
+            System.out.println("✓ TRANSMISSION COMPLETE");
+            System.out.println("==========================================");
 
         } catch (Exception e) {
 
             System.err.println();
             System.err.println(
-                    "✗ SonicLink error: "
+                    "✗ Transmission failed: "
                             + e.getMessage()
             );
         }
     }
 
-    /**
-     * Handles the send command.
-     *
-     * Usage:
-     *     send <message>
-     */
-    private void handleSend(String[] args)
-            throws Exception {
+    private void handleListen() {
 
-        if (args.length < 2) {
+        final int RECORD_DURATION_MS = 60000;
 
-            System.err.println(
-                    "✗ Please provide a message."
+        try {
+
+            System.out.println();
+            System.out.println("==========================================");
+            System.out.println("          SONICLINK RECEIVER");
+            System.out.println("==========================================");
+            System.out.println();
+            System.out.println(
+                    "Listening for acoustic transmission..."
+            );
+            System.out.println();
+
+            AudioReceiver receiver =
+                    new AudioReceiver();
+
+            byte[] pcm =
+                    receiver.record(RECORD_DURATION_MS);
+
+            System.out.println();
+            System.out.println(
+                    "PCM bytes: " + pcm.length
             );
 
             System.out.println();
             System.out.println(
-                    "Example:"
+                    "🔎 Searching for SonicLink preamble..."
             );
 
+            int preambleEnd =
+                    PreambleDetector.findPreambleEnd(
+                            pcm,
+                            SonicConfig.SAMPLE_RATE,
+                            SonicConfig.PREAMBLE_FREQ,
+                            SonicConfig.PREAMBLE_DURATION_MS
+                    );
+
+            System.out.println("✓ Preamble detected.");
             System.out.println(
-                    "  java -cp out "
-                            + "com.soniclink.cli.SonicLinkCLI "
-                            + "send \"Hello SonicLink\""
+                    "  Data starts at byte: "
+                            + preambleEnd
             );
 
-            return;
-        }
+            Demodulator demodulator =
+                    new Demodulator();
 
-        /*
-         * Join all arguments after "send".
-         *
-         * This allows:
-         *
-         * send Hello SonicLink
-         *
-         * instead of requiring quotes.
-         */
-        StringBuilder message =
-                new StringBuilder();
+            int headerBits =
+                    PacketCodec.HEADER_SIZE * 8;
 
-        for (int i = 1; i < args.length; i++) {
+            int samplesPerSymbol =
+                    demodulator.getSamplesPerSymbol();
 
-            if (i > 1) {
-                message.append(" ");
-            }
+            int headerPcmBytes =
+                    headerBits
+                            * samplesPerSymbol
+                            * 2;
 
-            message.append(args[i]);
-        }
+            if (pcm.length - preambleEnd
+                    < headerPcmBytes) {
 
-        transmitter.transmit(
-                message.toString()
-        );
-    }
+                System.err.println(
+                        "✗ Recording ended before header."
+                );
 
-    /**
-     * Handles the send-file command.
-     *
-     * Usage:
-     *     send-file [path]
-     *
-     * If no path is given, an interactive menu lets the user choose the
-     * file type (Text / PDF / Image) and enter a path. If a path IS given
-     * on the command line, the file type is auto-detected from its
-     * extension and no prompt is shown.
-     */
-    private void handleSendFile(String[] args)
-            throws Exception {
-
-        String filePath;
-
-        if (args.length >= 2) {
-            // Path given directly on the command line, e.g.
-            // send-file /path/to/document.pdf
-            filePath = args[1];
-
-        } else {
-            // No path given - walk the user through an interactive menu.
-            filePath = promptForFilePath();
-
-            if (filePath == null) {
-                System.out.println("✗ Cancelled.");
                 return;
             }
+
+            byte[] headerPcm =
+                    Arrays.copyOfRange(
+                            pcm,
+                            preambleEnd,
+                            preambleEnd + headerPcmBytes
+                    );
+
+            boolean[] headerBitsDecoded =
+                    demodulator.demodulate(headerPcm);
+
+            byte[] header =
+                    BitStreamUtils.bitsToBytes(
+                            headerBitsDecoded
+                    );
+
+            if (header.length < PacketCodec.HEADER_SIZE) {
+
+                System.err.println(
+                        "✗ Invalid header."
+                );
+
+                return;
+            }
+
+            if (header[0] != SonicConfig.MAGIC_1
+                    || header[1] != SonicConfig.MAGIC_2
+                    || header[2] != SonicConfig.PROTOCOL_VERSION) {
+
+                System.err.println(
+                        "✗ Invalid SonicLink packet header."
+                );
+
+                System.err.printf(
+                        "  Expected magic: %02X %02X%n",
+                        SonicConfig.MAGIC_1,
+                        SonicConfig.MAGIC_2
+                );
+
+                return;
+            }
+
+            int payloadLength =
+                    ((header[3] & 0xFF) << 8)
+                            | (header[4] & 0xFF);
+
+            if (payloadLength < 0
+                    || payloadLength
+                    > SonicConfig.MAX_PAYLOAD_SIZE) {
+
+                System.err.println(
+                        "✗ Invalid payload length: "
+                                + payloadLength
+                );
+
+                return;
+            }
+
+            int packetBytes =
+                    PacketCodec.HEADER_SIZE
+                            + payloadLength
+                            + PacketCodec.CRC_SIZE;
+
+            int packetBits =
+                    packetBytes * 8;
+
+            int packetPcmBytes =
+                    packetBits
+                            * samplesPerSymbol
+                            * 2;
+
+            if (pcm.length - preambleEnd
+                    < packetPcmBytes) {
+
+                System.err.println(
+                        "✗ Recording ended before complete packet."
+                );
+
+                return;
+            }
+
+            byte[] packetPcm =
+                    Arrays.copyOfRange(
+                            pcm,
+                            preambleEnd,
+                            preambleEnd + packetPcmBytes
+                    );
+
+            boolean[] recoveredBits =
+                    demodulator.demodulate(packetPcm);
+
+            byte[] recoveredBytes =
+                    BitStreamUtils.bitsToBytes(
+                            recoveredBits
+                    );
+
+            Packet packet =
+                    PacketCodec.decode(recoveredBytes);
+
+            String message =
+                    packet.getPayloadAsString();
+
+            System.out.println();
+            System.out.println("==========================================");
+            System.out.println("        ✓ MESSAGE RECEIVED");
+            System.out.println("==========================================");
+            System.out.println();
+            System.out.println(message);
+            System.out.println();
+            System.out.println("==========================================");
+
+        } catch (PacketException e) {
+
+            System.err.println(
+                    "✗ Packet error: " + e.getMessage()
+            );
+
+        } catch (Exception e) {
+
+            System.err.println(
+                    "✗ Receiver error: " + e.getMessage()
+            );
         }
-
-        fileTransmitter.transmitFile(filePath);
     }
 
-    /**
-     * Interactive menu: lets the user pick a file type for context, then
-     * type the path to the file. The type selection is informational for
-     * the user (auto-detection from the extension still happens inside
-     * FileTransmitter); it mainly helps guide what kind of file is expected.
-     *
-     * @return the entered file path, or null if the user cancelled
-     */
-    private String promptForFilePath() {
-
-        Scanner scanner = new Scanner(System.in);
-
-        System.out.println();
-        System.out.println("What would you like to send?");
-        System.out.println("  1) Text file (.txt)");
-        System.out.println("  2) PDF file (.pdf)");
-        System.out.println("  3) Image file (.png/.jpg/.jpeg/.gif/.bmp/.webp)");
-        System.out.println("  0) Cancel");
-        System.out.print("Choose an option: ");
-
-        String choice = scanner.nextLine().trim();
-
-        String kindLabel;
-        switch (choice) {
-            case "1":
-                kindLabel = "text";
-                break;
-            case "2":
-                kindLabel = "PDF";
-                break;
-            case "3":
-                kindLabel = "image";
-                break;
-            case "0":
-                return null;
-            default:
-                System.err.println("✗ Invalid option.");
-                return null;
-        }
-
-        System.out.printf("Enter the path to the %s file: ", kindLabel);
-        String path = scanner.nextLine().trim();
-
-        if (path.isEmpty()) {
-            System.err.println("✗ No path entered.");
-            return null;
-        }
-
-        return path;
-    }
-
-    /**
-     * Handles the listen command.
-     */
-    private void handleListen()
-            throws Exception {
-
-        receiver.listen();
-    }
-
-    /**
-     * Handles the software self-test.
-     */
-    private void handleSelfTest() {
-
-        selfTest.run();
-    }
-
-    /**
-     * Prints command-line usage.
-     */
     private void printUsage() {
 
         System.out.println();
-        System.out.println("SonicLink");
-        System.out.println(
-                "Acoustic FSK Communication System"
-        );
+        System.out.println("==========================================");
+        System.out.println("              SONICLINK");
+        System.out.println("     Acoustic FSK Communication System");
+        System.out.println("==========================================");
         System.out.println();
 
-        System.out.println("Usage:");
+        System.out.println("Commands:");
+        System.out.println();
 
         System.out.println(
                 "  send <message>"
         );
 
         System.out.println(
-                "      Transmit a text message through audio."
+                "      Convert text into FSK audio."
         );
 
         System.out.println();
 
         System.out.println(
-                "  send-file [path]"
+                "  send-file <path>"
         );
 
         System.out.println(
-                "      Transmit a text/PDF/image file through audio."
+                "      Extract text from TXT/PDF/image"
         );
 
         System.out.println(
-                "      Without a path, shows an interactive menu to pick"
-        );
-
-        System.out.println(
-                "      the file type and enter a path."
+                "      and transmit it as FSK audio."
         );
 
         System.out.println();
@@ -304,7 +483,7 @@ public class SonicLinkCLI {
         );
 
         System.out.println(
-                "      Listen for and decode a SonicLink packet."
+                "      Receive and decode acoustic audio."
         );
 
         System.out.println();
@@ -314,49 +493,32 @@ public class SonicLinkCLI {
         );
 
         System.out.println(
-                "      Run the software loopback test suite."
-        );
-
-        System.out.println();
-
-        System.out.println(
-                "  help"
-        );
-
-        System.out.println(
-                "      Display this help message."
+                "      Run software loopback tests."
         );
 
         System.out.println();
 
         System.out.println("Examples:");
-
-        System.out.println(
-                "  ./build.sh run send \"Hello SonicLink\""
-        );
-
         System.out.println();
 
         System.out.println(
-                "  ./build.sh run send-file"
+                "  bash build.sh run send \"Hello SonicLink\""
         );
 
-        System.out.println();
-
         System.out.println(
-                "  ./build.sh run send-file ./report.pdf"
+                "  bash build.sh run send-file ./test.txt"
         );
 
-        System.out.println();
-
         System.out.println(
-                "  ./build.sh run listen"
+                "  bash build.sh run send-file ./report.pdf"
         );
 
-        System.out.println();
+        System.out.println(
+                "  bash build.sh run send-file ./notes.png"
+        );
 
         System.out.println(
-                "  ./build.sh run self-test"
+                "  bash build.sh run listen"
         );
 
         System.out.println();

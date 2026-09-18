@@ -1,1 +1,1 @@
-Hello from SonicLink! This is our final file transfer test.
+Hello from SonicLink file transfer!
