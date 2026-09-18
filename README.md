@@ -1,122 +1,816 @@
-# SonicLink
+# 🔊 SonicLink
 
-Transmit short text messages between two computers using sound — no Wi-Fi
-or Bluetooth required. Data is encoded as audio tones (Frequency Shift
-Keying) played through the speaker, and decoded on another machine by
-listening through the microphone using the Goertzel algorithm.
+### Offline text communication using sound
 
-> Status: project skeleton — core encoding/decoding logic is being
-> implemented. See "Project Structure" below for what each file does.
+**SonicLink** is a Java-based acoustic communication system that allows short text messages to be transmitted between computers using **sound instead of Wi-Fi, Bluetooth, or the internet**.
 
-## Overview
+The sender converts text into binary data, modulates the bits into audio tones using **Frequency Shift Keying (FSK)**, and plays the signal through a speaker. A receiving computer captures the audio through a microphone and uses the **Goertzel algorithm** to identify the transmitted frequencies and reconstruct the original message.
 
-- **Sender**: converts a text message into bits, encodes each bit as one
-  of two audio tones, and plays the resulting audio through the speaker.
-- **Receiver**: listens through the microphone, detects which tone is
-  present in each time window using the Goertzel algorithm, and
-  reconstructs the original message.
-- **Integrity check**: a checksum is transmitted alongside the message so
-  the receiver can detect (not correct) errors caused by background noise.
-
-## Features
-
-- Encode and transmit text messages as audio (FSK modulation)
-- Decode incoming audio back into text (Goertzel-based tone detection)
-- Checksum-based transmission integrity verification
-- Fully command-line driven, no GUI required
-
-## Technologies Used
-
-- Java 11+ (standard library only — `javax.sound.sampled` for audio I/O)
-- No external dependencies
-
-## Prerequisites
-
-- JDK 11 or later installed (`java -version` to check)
-- A working speaker (for sending) and microphone (for receiving) on your
-  machine, with OS-level microphone permissions granted to your terminal
-
-## Setup & Installation
-
-1. Clone the repository:
-   ```
-   git clone https://github.com/kongunjan/SonicLink.git
-   cd SonicLink
-   ```
-
-2. Build the project:
-   ```
-   ./build.sh
-   ```
-   (On Windows, run the equivalent commands manually — see `build.sh` for
-   the two commands it runs, or use `javac` directly from PowerShell.)
-
-## Running the Project
-
-**To send a message** (run on the sending machine):
-```
-java -cp out com.soniclink.cli.SonicLinkCLI send "Hello World"
+```text
+Text
+  ↓
+Bytes
+  ↓
+Bits
+  ↓
+FSK Modulation
+  ↓
+Audio Tones 🔊
+  ↓
+Microphone 🎙️
+  ↓
+Goertzel Detection
+  ↓
+Bits
+  ↓
+Bytes
+  ↓
+CRC Verification
+  ↓
+Original Text
 ```
 
-**To listen for a message** (run on the receiving machine, or a second
-terminal on the same machine to test locally):
+---
+
+## 📌 Project Status
+
+> **Status: Functional prototype**
+
+The core SonicLink communication pipeline has been implemented and tested:
+
+* ✅ Text-to-bit conversion
+* ✅ FSK modulation
+* ✅ PCM audio generation
+* ✅ Speaker-based audio transmission
+* ✅ Microphone audio capture
+* ✅ Goertzel frequency detection
+* ✅ Bit reconstruction
+* ✅ Packet encoding/decoding
+* ✅ CRC-based integrity verification
+* ✅ Command-line interface
+* ✅ Unit tests for core utilities
+
+Example successful transmission:
+
+```text
+================================
+Message: Hello SonicLink
+Payload: 15 bytes
+Protocol version: 1
+✓ CRC verified
 ```
+
+The current implementation is designed for **short-distance experimental acoustic communication** rather than high-speed data transfer.
+
+---
+
+# 🧠 How SonicLink Works
+
+SonicLink treats sound as a physical communication channel.
+
+Instead of sending:
+
+```text
+Computer A ─── Wi-Fi ───> Computer B
+```
+
+SonicLink uses:
+
+```text
+Computer A
+    │
+    │ Generate sound
+    ▼
+ 🔊 Speaker
+    │
+    │ Acoustic signal
+    ▼
+ 🎙️ Microphone
+    │
+    │ Capture samples
+    ▼
+Computer B
+```
+
+The system uses **Frequency Shift Keying (FSK)** to represent binary information.
+
+For SonicLink:
+
+| Bit | Frequency |
+| --- | --------: |
+| `0` |   1200 Hz |
+| `1` |   2200 Hz |
+
+For example:
+
+```text
+10110
+
+1 → 2200 Hz
+0 → 1200 Hz
+1 → 2200 Hz
+1 → 2200 Hz
+0 → 1200 Hz
+```
+
+The receiver examines each symbol window and determines which frequency is stronger.
+
+---
+
+# ⚙️ System Architecture
+
+```text
+                    SONICLINK
+                       │
+          ┌────────────┴────────────┐
+          │                         │
+       SENDER                    RECEIVER
+          │                         │
+     Text Message              Microphone
+          │                         │
+          ▼                         ▼
+    Bit Conversion             PCM Capture
+          │                         │
+          ▼                         ▼
+    Packet Encoding          Signal Processing
+          │                         │
+          ▼                         ▼
+    FSK Modulator            Goertzel Detector
+          │                         │
+          ▼                         ▼
+    Audio Samples             Detected Bits
+          │                         │
+          ▼                         ▼
+       Speaker                Packet Decoder
+                                    │
+                                    ▼
+                              CRC Verification
+                                    │
+                                    ▼
+                              Original Message
+```
+
+---
+
+# 🔬 Digital Signal Processing
+
+## Frequency Shift Keying
+
+FSK is a digital modulation technique where different frequencies represent different symbols.
+
+SonicLink uses two frequencies:
+
+```text
+Binary 0 → 1200 Hz
+Binary 1 → 2200 Hz
+```
+
+Each bit is transmitted for a fixed symbol duration.
+
+This produces an audio waveform that can be detected by the receiver.
+
+---
+
+## 🎯 Goertzel Algorithm
+
+The receiver cannot simply ask:
+
+> "Is there a 2200 Hz sound?"
+
+It must analyze a sampled audio window and determine which target frequency contains more energy.
+
+SonicLink uses the **Goertzel algorithm**, which is particularly useful for detecting specific frequencies without calculating a complete FFT.
+
+For every symbol window, the receiver evaluates the energy around:
+
+```text
+1200 Hz
+2200 Hz
+```
+
+Conceptually:
+
+```text
+Audio Window
+     │
+     ├──────────────► Goertzel @ 1200 Hz
+     │                       │
+     │                       ▼
+     │                  Energy E0
+     │
+     └──────────────► Goertzel @ 2200 Hz
+                             │
+                             ▼
+                        Energy E1
+
+             Compare E0 and E1
+                    │
+          ┌─────────┴─────────┐
+          ▼                   ▼
+       E0 > E1             E1 > E0
+          │                   │
+          ▼                   ▼
+          0                   1
+```
+
+---
+
+# 🛡️ Data Integrity
+
+Audio communication is susceptible to:
+
+* Background noise
+* Echo
+* Speaker distortion
+* Microphone sensitivity
+* Environmental interference
+* Incorrect symbol detection
+
+To detect corrupted transmissions, SonicLink includes a **CRC-based integrity check**.
+
+The transmitted packet contains the payload together with integrity information.
+
+The receiver calculates the CRC again and compares it with the transmitted value.
+
+```text
+Sender
+
+Message
+   ↓
+Payload
+   ↓
+CRC Calculation
+   ↓
+Packet
+   ↓
+FSK Transmission
+
+
+Receiver
+
+Audio
+   ↓
+Detected Bits
+   ↓
+Packet
+   ↓
+CRC Calculation
+   ↓
+Compare CRCs
+   ↓
+┌───────────────┐
+│ Match         │ → ✓ CRC verified
+│ Mismatch      │ → ✗ Corrupted packet
+└───────────────┘
+```
+
+CRC provides **error detection**, not error correction.
+
+---
+
+# 📦 Packet Structure
+
+SonicLink uses a structured packet rather than transmitting raw text directly.
+
+A conceptual packet is:
+
+```text
+┌─────────┬─────────┬───────────┬─────────┬─────────┐
+│ Version │ Length  │  Payload  │   CRC   │  ...    │
+└─────────┴─────────┴───────────┴─────────┴─────────┘
+```
+
+This allows the receiver to determine:
+
+* Protocol version
+* Payload size
+* Message contents
+* Transmission integrity
+
+The protocol can therefore be extended in future versions without redesigning the entire communication system.
+
+---
+
+# ✨ Features
+
+* 🔊 Acoustic text transmission
+* 🎙️ Microphone-based reception
+* 0️⃣1️⃣ FSK binary modulation
+* 🎯 Goertzel frequency detection
+* 🧩 Structured packet protocol
+* 🛡️ CRC-based integrity verification
+* 💻 Command-line interface
+* ☕ Java standard library implementation
+* 🌐 No Wi-Fi required
+* 📡 No Bluetooth required
+* 📦 No external Java dependencies
+
+---
+
+# 🛠️ Technologies Used
+
+| Technology            | Purpose                      |
+| --------------------- | ---------------------------- |
+| Java 11+              | Core implementation          |
+| `javax.sound.sampled` | Audio input/output           |
+| FSK                   | Digital modulation           |
+| Goertzel Algorithm    | Frequency detection          |
+| CRC                   | Error detection              |
+| PCM                   | Digital audio representation |
+| Bash                  | Build automation             |
+| JUnit / Java tests    | Testing                      |
+
+The project intentionally avoids external runtime dependencies and relies primarily on the Java standard library.
+
+---
+
+# 📋 Prerequisites
+
+Before running SonicLink, make sure you have:
+
+* JDK 11 or later
+* A working speaker
+* A working microphone
+* Microphone permissions enabled for the terminal/application
+
+Check Java:
+
+```bash
+java -version
+```
+
+Check the compiler:
+
+```bash
+javac -version
+```
+
+---
+
+# 🚀 Installation
+
+Clone the repository:
+
+```bash
+git clone https://github.com/kongunjan/SonicLink.git
+```
+
+Enter the project directory:
+
+```bash
+cd SonicLink
+```
+
+Build the project:
+
+```bash
+./build.sh
+```
+
+If macOS/Linux reports a permission error:
+
+```bash
+chmod +x build.sh
+./build.sh
+```
+
+---
+
+# ▶️ Running SonicLink
+
+## Sender
+
+Run:
+
+```bash
+java -cp out com.soniclink.cli.SonicLinkCLI send "Hello SonicLink"
+```
+
+The program converts the message into a packet, modulates the bits into audio and plays the resulting signal through the speaker.
+
+---
+
+## Receiver
+
+Run:
+
+```bash
 java -cp out com.soniclink.cli.SonicLinkCLI listen
 ```
 
-For a first test, try running both commands on the **same machine** in two
-terminal windows, with your speaker volume up — this avoids needing two
-physical devices while you're debugging.
+The receiver captures audio from the microphone and attempts to reconstruct the transmitted packet.
 
-## Testing
+A successful transmission produces output similar to:
 
-A simple round-trip test for the bit/byte conversion utility is included:
+```text
+================================
+Message: Hello SonicLink
+Payload: 15 bytes
+Protocol version: 1
+✓ CRC verified
 ```
-java -cp out com.soniclink.BitStreamUtilsTest
+
+---
+
+# 🧪 Local Testing
+
+You can test SonicLink without two physical computers.
+
+Open two terminals on the same computer.
+
+### Terminal 1
+
+```bash
+java -cp out com.soniclink.cli.SonicLinkCLI listen
 ```
 
-Additional manual testing approach (document your actual results in the
-project report):
-- Test at varying distances between speaker and microphone
-- Test with varying message lengths
-- Measure bit-error rate at each distance/volume combination
+### Terminal 2
 
-## Project Structure
-
+```bash
+java -cp out com.soniclink.cli.SonicLinkCLI send "Hello SonicLink"
 ```
+
+Keep the speaker volume high enough for the microphone to detect the signal.
+
+For more realistic testing, place two computers several distances apart and measure whether the message is decoded successfully.
+
+---
+
+# 🧪 Testing Strategy
+
+SonicLink can be evaluated using several experimental conditions.
+
+### Distance
+
+Test at different speaker-microphone distances:
+
+```text
+0.5 m
+1 m
+2 m
+3 m
+5 m
+```
+
+### Message Length
+
+Test:
+
+```text
+Short message
+Medium message
+Long message
+```
+
+### Environmental Noise
+
+Compare performance in:
+
+```text
+Quiet room
+Normal room
+Noisy environment
+```
+
+### Volume
+
+Repeat the tests at different speaker volume levels.
+
+Useful measurements include:
+
+* Successful transmissions
+* Failed transmissions
+* CRC failures
+* Bit errors
+* Effective transmission time
+* Approximate bit-error rate
+
+---
+
+# 📁 Project Structure
+
+```text
 SonicLink/
-├── build.sh                          # compile helper script
+│
+├── build.sh
 ├── README.md
-├── statement.md                      # problem statement, scope, target users
+├── statement.md
+│
 └── src/
-    ├── main/java/com/soniclink/
-    │   ├── cli/
-    │   │   └── SonicLinkCLI.java     # entry point, argument parsing
-    │   ├── codec/
-    │   │   ├── Modulator.java        # bits -> audio samples (FSK encode)
-    │   │   ├── Demodulator.java      # audio samples -> bits (decode orchestration)
-    │   │   └── GoertzelDetector.java # core DSP: detect a tone's presence in a window
-    │   ├── audio/
-    │   │   ├── AudioTransmitter.java # plays PCM bytes through speaker
-    │   │   └── AudioReceiver.java    # captures PCM bytes from microphone
-    │   └── util/
-    │       ├── BitStreamUtils.java   # byte[] <-> bit[] conversion
-    │       ├── ChecksumValidator.java# integrity checking
-    │       └── SonicConfig.java      # shared constants (frequencies, sample rate, etc.)
-    └── test/java/com/soniclink/
-        └── BitStreamUtilsTest.java   # round-trip test
+    │
+    ├── main/
+    │   └── java/
+    │       └── com/
+    │           └── soniclink/
+    │
+    │               ├── cli/
+    │               │   └── SonicLinkCLI.java
+    │               │
+    │               ├── codec/
+    │               │   ├── Modulator.java
+    │               │   ├── Demodulator.java
+    │               │   └── GoertzelDetector.java
+    │               │
+    │               ├── audio/
+    │               │   ├── AudioTransmitter.java
+    │               │   └── AudioReceiver.java
+    │               │
+    │               └── util/
+    │                   ├── BitStreamUtils.java
+    │                   ├── ChecksumValidator.java
+    │                   └── SonicConfig.java
+    │
+    └── test/
+        └── java/
+            └── com/
+                └── soniclink/
+                    └── BitStreamUtilsTest.java
 ```
 
-## Known Limitations / Future Enhancements
+---
 
-- Currently uses a fixed capture duration on the receiver rather than
-  continuous streaming with automatic start/stop detection
-- Error *correction* (not just detection) could be added with Hamming
-  codes for better reliability in noisy environments
-- Transmission speed (baud rate) is fixed; could be made adaptive based
-  on measured ambient noise
+# 🧩 Module Responsibilities
 
-## References
+### `SonicLinkCLI`
 
-- (add the specific articles/resources you personally used while
-  implementing the Goertzel algorithm and FSK scheme)
+Provides the command-line interface and handles commands such as:
+
+```text
+send
+listen
+```
+
+### `Modulator`
+
+Converts binary data into FSK audio samples.
+
+### `Demodulator`
+
+Coordinates the decoding process and converts detected frequencies back into bits.
+
+### `GoertzelDetector`
+
+Performs frequency-energy analysis on individual audio windows.
+
+### `AudioTransmitter`
+
+Sends generated PCM audio through the computer's speaker.
+
+### `AudioReceiver`
+
+Captures PCM audio through the microphone.
+
+### `BitStreamUtils`
+
+Handles conversion between:
+
+```text
+bytes ↔ bits
+```
+
+### `ChecksumValidator`
+
+Calculates and validates packet integrity.
+
+### `SonicConfig`
+
+Stores shared communication parameters such as:
+
+```text
+Sample rate
+FSK frequencies
+Symbol duration
+```
+
+---
+
+# 📐 Communication Pipeline
+
+The complete transmission process is:
+
+```text
+             TRANSMITTER
+                  │
+                  ▼
+          "Hello SonicLink"
+                  │
+                  ▼
+             UTF-8 Bytes
+                  │
+                  ▼
+             Bit Stream
+                  │
+                  ▼
+          Packet Construction
+                  │
+                  ▼
+            CRC Generation
+                  │
+                  ▼
+             FSK Modulator
+                  │
+                  ▼
+             PCM Samples
+                  │
+                  ▼
+              🔊 Speaker
+                  │
+                  │ Sound
+                  ▼
+             🎙️ Microphone
+                  │
+                  ▼
+            PCM Samples
+                  │
+                  ▼
+         Goertzel Detection
+                  │
+                  ▼
+             Bit Stream
+                  │
+                  ▼
+           Packet Decoding
+                  │
+                  ▼
+             CRC Check
+                  │
+                  ▼
+          "Hello SonicLink"
+```
+
+---
+
+# ⚠️ Current Limitations
+
+SonicLink is an experimental acoustic modem, so it has several limitations.
+
+### Fixed capture duration
+
+The receiver currently uses a predefined capture duration instead of continuously detecting when a transmission begins and ends.
+
+### Fixed transmission parameters
+
+The current implementation uses fixed FSK frequencies and symbol timing.
+
+### Noise sensitivity
+
+Strong background noise or acoustic interference can cause incorrect frequency detection.
+
+### Limited data rate
+
+The system prioritizes simplicity and reliability over high-speed communication.
+
+### Error detection only
+
+CRC can identify corrupted packets but does not repair them.
+
+---
+
+# 🔮 Future Enhancements
+
+Possible improvements include:
+
+### Automatic synchronization
+
+Add a preamble and synchronization sequence so the receiver can automatically detect the beginning of a transmission.
+
+### Automatic start/stop detection
+
+Replace fixed-duration recording with continuous monitoring and signal detection.
+
+### Error correction
+
+Implement techniques such as:
+
+* Hamming codes
+* Reed-Solomon codes
+* Forward Error Correction (FEC)
+
+### Adaptive transmission
+
+Measure environmental noise and automatically adjust:
+
+* Symbol duration
+* Detection threshold
+* Transmission frequency
+* Data rate
+
+### Higher-level protocol
+
+Add:
+
+* Packet sequence numbers
+* Acknowledgements
+* Retransmission
+* Duplicate detection
+* Multiple-message support
+
+### Better signal processing
+
+Potential future approaches include:
+
+* FFT-based analysis
+* Band-pass filtering
+* Adaptive thresholds
+* Automatic gain normalization
+
+### Continuous communication
+
+A future version could support:
+
+```text
+SonicLink
+   ↕
+Continuous acoustic channel
+   ↕
+Real-time messages
+```
+
+---
+
+# 🔐 Security Considerations
+
+SonicLink is designed as an experimental communication system, **not a secure messaging protocol**.
+
+The transmitted audio can potentially be recorded by anyone within acoustic range.
+
+CRC provides integrity checking but **does not provide encryption or authentication**.
+
+Future versions could add cryptographic protection if secure communication becomes a project requirement.
+
+---
+
+# 🎯 Project Goals
+
+The primary goal of SonicLink is to demonstrate how fundamental concepts from:
+
+* Digital communication
+* Signal processing
+* Computer networking
+* Error detection
+* Audio processing
+* Java programming
+
+can be combined to create a working communication system without conventional wireless networking.
+
+The project provides a practical example of how **information can be represented as physical signals and recovered through signal analysis**.
+
+---
+
+# 📚 References
+
+The implementation is based on established concepts in digital communications and digital signal processing.
+
+Recommended references:
+
+1. **John G. Proakis and Masoud Salehi**, *Fundamentals of Communication Systems*, Pearson.
+
+2. **Richard G. Lyons**, *Understanding Digital Signal Processing*, Pearson.
+
+3. **Steven W. Smith**, *The Scientist and Engineer's Guide to Digital Signal Processing*, chapters covering digital filters and spectral analysis.
+
+4. **NIST**, *Digital Signature Standard / CRC-related standards and publications*, for background on integrity and error-detection concepts.
+
+5. **Oracle Java Documentation**, `javax.sound.sampled` package documentation, for Java audio capture and playback.
+
+6. **Wikipedia**, *Goertzel Algorithm*, for introductory background on single-frequency detection.
+
+7. **Wikipedia**, *Frequency-Shift Keying*, for introductory background on FSK digital modulation.
+
+> **Note:** The references above are background resources for the underlying algorithms and technologies. The exact implementation in SonicLink is original project code.
+
+---
+
+# 👩‍💻 Author
+
+**Gunjan**
+
+SonicLink was developed as an educational project exploring the intersection of:
+
+```text
+Java
+   +
+Digital Signal Processing
+   +
+Digital Communication
+   +
+Audio Engineering
+```
+
+---
+
+# 📜 License
+
+This project is intended for educational and experimental use.
+
+If a specific open-source license is added to the repository, this section should be updated accordingly.
+
+---
+
+## ⭐ Project Concept
+
+> **What if two computers could talk without Wi-Fi, Bluetooth, or cables?**
+
+SonicLink explores that question using something much older and simpler:
+
+**sound.** 🔊
